@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live Arduino Data Plot</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+
+<h1>Live Arduino Data Plot</h1>
+<button id="connectBtn">Connect to Arduino</button>
+<button id="simulateBtn">Simulate Data</button>
+
+<div id="graph" style="width:100%;height:400px;"></div>
+<div id="graph3d" style="width:100%;height:400px;"></div>
+
+<script>
+  let port, reader;
+  let xData = [], yData = [];
+  let latData = [], lonData = [], altData = [];
+
+  Plotly.newPlot('graph', [{x: xData, y: yData, type: 'scatter', mode: 'lines', line: {color:'cyan'}}], 
+    {title:'Sensor Value Over Time', xaxis:{title:'Time'}, yaxis:{title:'Value'}});
+
+  const layout3d = {
+    title: '3D Location Plot (Lon, Lat, Alt)',
+    scene: {
+      xaxis: {title: 'Longitude'},
+      yaxis: {title: 'Latitude'},
+      zaxis: {title: 'Altitude (m)'},
+      camera: {eye: {x:1.5, y:1.5, z:1.2}},
+      aspectmode: 'cube'
+    }
+  };
+
+  Plotly.newPlot('graph3d', [{x: lonData, y: latData, z: altData, type:'scatter3d', mode:'lines', line:{color:'orange'}}], layout3d);
+
+  let angle = 0;
+  function rotateCamera() {
+    angle += 0.01;
+    const r = 1.7;
+    Plotly.relayout('graph3d', {scene: {camera: {eye: {x: r*Math.cos(angle), y: r*Math.sin(angle), z: 1.2}}}});
+    requestAnimationFrame(rotateCamera);
+  }
+  rotateCamera();
+
+  async function connectArduino() {
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({baudRate: 9600});
+      reader = port.readable.getReader();
+      readLoop();
+    } catch (e) { console.error("Connection failed:", e); }
+  }
+
+  async function readLoop() {
+    while(true) {
+      const {value, done} = await reader.read();
+      if(done) break;
+      if(value) {
+        const text = new TextDecoder().decode(value).trim();
+        const parts = text.split(',');
+        if(parts.length>=4) {
+          const sensorVal= parseFloat(parts[0]), lat=parseFloat(parts[1]), lon=parseFloat(parts[2]), alt=parseFloat(parts[3]);
+          if(!isNaN(sensorVal) && !isNaN(lat) && !isNaN(lon) && !isNaN(alt)) {
+            xData.push(new Date());
+            yData.push(sensorVal);
+            latData.push(lat);
+            lonData.push(lon);
+            altData.push(alt);
+            Plotly.update('graph', {x:[xData], y:[yData]});
+            Plotly.update('graph3d', {x:[lonData], y:[latData], z:[altData]});
+          }
+        }
+      }
+    }
+  }
+
+  function simulateData() {
+    setInterval(() => {
+      const sensorVal = Math.random()*100;
+      const lat = 28 + Math.random()*0.01;
+      const lon = 77 + Math.random()*0.01;
+      const alt = 200 + Math.random()*50;
+      xData.push(new Date());
+      yData.push(sensorVal);
+      latData.push(lat);
+      lonData.push(lon);
+      altData.push(alt);
+      Plotly.update('graph', {x:[xData], y:[yData]});
+      Plotly.update('graph3d', {x:[lonData], y:[latData], z:[altData]});
+    }, 500);
+  }
+
+  document.getElementById('connectBtn').onclick = connectArduino;
+  document.getElementById('simulateBtn').onclick = simulateData;
+</script>
+
+</body>
+</html>
